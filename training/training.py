@@ -20,20 +20,24 @@ from batch_reader import BatchReader
 import models
 
 def train(prefix, **arg_dict):
-    batch_size = arg_dict['batch_size']
     img_size = arg_dict['img_size']
+    gpu_num = len(arg_dict["gpu_device"].split(','))
+    batch_size = arg_dict['batch_size'] * gpu_num
+    arg_dict['batch_size'] = batch_size
+    print ("real batch_size = %d for gpu_num = %d" % (batch_size, gpu_num))
     # batch generator
     _batch_reader = BatchReader(**arg_dict)
     _batch_generator = _batch_reader.batch_generator()
     # net
+    ctx = [mx.gpu(i) for i in range(gpu_num)]
     net =  models.init(arg_dict["model"], feature_dim=arg_dict["feature_dim"],
                        label_num=arg_dict["label_num"],
                        model_params=json.loads(arg_dict["model_params"]))
     if arg_dict["restore_ckpt"]:
         print "resotre checkpoint from %s" % (arg_dict["restore_ckpt"])
-        net.load_params(arg_dict['restore_ckpt'], ctx=mx.gpu())
+        net.load_params(arg_dict['restore_ckpt'], ctx=ctx)
     else:
-        net.initialize(init=mx.init.Xavier(), ctx=mx.gpu())
+        net.initialize(init=mx.init.Xavier(), ctx=ctx)
     print (net)
     # trainer
     trainer = gluon.Trainer(net.collect_params(), "sgd", # adam
@@ -41,23 +45,29 @@ def train(prefix, **arg_dict):
     # start loop
     print ("Start to training...")
     start_time = time.time()
-    step = 0
-    display = 100
+    step = 1
+    display = 10
     loss_list = []
     while not _batch_reader.should_stop():
         batch = _batch_generator.next()
-        image = nd.array(batch[0], ctx=mx.gpu(), dtype='float32')
-        label = nd.array(batch[1], ctx=mx.gpu(), dtype='float32')
-        #  normalization. keep in-place operation
-        image = nd.transpose(image, (0,3,1,2))
-        image -= 127.5
-        image *= 0.0078125
+        data = nd.array(batch[0], dtype='float32')
+        data = nd.transpose(data, (0,3,1,2))
+        label = nd.array(batch[1], dtype='float32')
+        data_list = gluon.utils.split_and_load(data, ctx)
+        label_list = gluon.utils.split_and_load(label, ctx)
+        #  normalization, in-place operation
+        for i in range(gpu_num):
+            data_list[i] -= 127.5
+            data_list[i] *= 0.0078125
+        # forward
         with autograd.record():
-            loss = net(image, label)
-        loss.backward()
+            losses = [net(x, y) for x, y in zip(data_list, label_list)]
+        for l in losses:
+            l.backward()
         trainer.step(batch_size)
+        loss = np.mean([nd.mean(l).asscalar() for l in losses])
+        loss_list.append(loss)
         nd.waitall()
-        loss_list.append(nd.mean(loss).asscalar())
         if step % display == 0:
             end_time = time.time()
             cost_time, start_time = end_time - start_time, end_time
@@ -69,11 +79,12 @@ def train(prefix, **arg_dict):
                    datetime.datetime.now().strftime("%Y%m%d_%H%M%S"), 
                    _batch_reader.get_epoch(), step, trainer.learning_rate, loss_display,
                    sample_per_sec, sec_per_step))
-            landmark_loss_list, angle_loss_list = [], []
-        if step % 50000 == 0:
+            loss_list = []
+        if step % 500000 == 0:
             # change lr
             trainer.set_learning_rate(trainer.learning_rate * 0.95)
             print ("change lr to %f" % trainer.learning_rate)
+        if step % 100000 == 0:
             # save checkpoint
             checkpoint_path = os.path.join(prefix, 'model.params')
             net.save_params(checkpoint_path)
