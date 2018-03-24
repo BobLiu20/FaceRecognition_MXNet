@@ -30,9 +30,10 @@ def train(prefix, **arg_dict):
     _batch_generator = _batch_reader.batch_generator()
     # net
     ctx = [mx.gpu(i) for i in range(gpu_num)]
-    net =  models.init(arg_dict["model"], feature_dim=arg_dict["feature_dim"],
-                       label_num=arg_dict["label_num"],
-                       model_params=json.loads(arg_dict["model_params"]))
+    model_params = json.loads(arg_dict["model_params"])
+    model_params["feature_dim"] = arg_dict["feature_dim"]
+    model_params["label_num"] = arg_dict["label_num"]
+    net =  models.init(arg_dict["model"], model_params=model_params)
     if arg_dict["restore_ckpt"]:
         print "resotre checkpoint from %s" % (arg_dict["restore_ckpt"])
         net.load_params(arg_dict['restore_ckpt'], ctx=ctx)
@@ -46,7 +47,7 @@ def train(prefix, **arg_dict):
     print ("Start to training...")
     start_time = time.time()
     step = 1
-    display = 10
+    display = 100
     loss_list = []
     while not _batch_reader.should_stop():
         batch = _batch_generator.next()

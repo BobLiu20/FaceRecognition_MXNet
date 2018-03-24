@@ -27,10 +27,11 @@ class CNNResidualBlock(nn.Block):
         return x
 
 class SphereFaceNet(gluon.Block):
-    def __init__(self, feature_dim, label_num, model_params, **kwargs):
+    def __init__(self, model_params, **kwargs):
         super(SphereFaceNet, self).__init__(**kwargs)
         with self.name_scope():
-            self.models = self._main_net(model_params["layer_type"], feature_dim, label_num)
+            self.models = self._main_net(model_params["layer_type"], model_params["feature_dim"],
+                                         model_params["label_num"])
             #  A-softmax = margin_inner_product + softmax_loss
             self.margin_inner_product = MarginInnerProduct(model_params)
             self.softmax_loss = loss.SoftmaxCrossEntropyLoss()
@@ -56,7 +57,7 @@ class SphereFaceNet(gluon.Block):
 
 
 if __name__ == "__main__":
-    margin_params = {"in_units": 512, "out_units": 6, "lamb_iter": 0, "lamb_base": 1000,
+    margin_params = {"feature_dim": 512, "label_num": 6, "lamb_iter": 0, "lamb_base": 1000,
                      "lamb_gamma": 0.12, "lamb_power": 1, "lamb_min": 10}
     margin_params["layer_type"] = "20layer"
     test = SphereFaceNet(512, 6, margin_params)
