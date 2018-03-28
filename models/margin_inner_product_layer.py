@@ -32,8 +32,8 @@ class MarginInnerProduct(nn.Block):
             self.weight = self.params.get('weight', shape=(self.out_units, self.in_units))
 
     def forward(self, x, label):
-        # return implement_0(x, label)
-        return implement_1(x, label)
+        # return self.implement_0(x, label)
+        return self.implement_1(x, label)
 
     def implement_0(self, x, label):
         '''
