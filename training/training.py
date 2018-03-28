@@ -36,7 +36,8 @@ def train(prefix, **arg_dict):
     net =  models.init(arg_dict["model"], model_params=model_params)
     if arg_dict["restore_ckpt"]:
         print "resotre checkpoint from %s" % (arg_dict["restore_ckpt"])
-        net.load_params(arg_dict['restore_ckpt'], ctx=ctx)
+        net.initialize(init=mx.init.Xavier(), ctx=ctx)
+        net.load_params(arg_dict['restore_ckpt'], ctx=ctx, allow_missing=True, ignore_extra=True)
     else:
         net.initialize(init=mx.init.Xavier(), ctx=ctx)
     print (net)

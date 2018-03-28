@@ -29,23 +29,67 @@ class MarginInnerProduct(nn.Block):
         ]
         #  training parameter
         with self.name_scope():
-            self.weight = self.params.get('weight', shape=(self.in_units, self.out_units))
+            self.weight = self.params.get('weight', shape=(self.out_units, self.in_units))
 
     def forward(self, x, label):
+        # return implement_0(x, label)
+        return implement_1(x, label)
+
+    def implement_0(self, x, label):
+        '''
+        following the sphereface code of caffe
+        '''
         #  weight normalize
         with x.context:
             w = self.weight.data()
         with mx.autograd.pause():
-            batch_size = x.shape[0]
-            #  normalize weight
-            with x.context:
-                w[:] = mx.ndarray.L2Normalization(w, mode='instance')
+            w_norm = w / nd.sqrt(nd.sum(nd.power(w, 2), axis=1)).reshape((-1, 1))
+            w[:] = w_norm
+        #  x_norm = |x|
+        x_norm = nd.power(x, 2)
+        x_norm = nd.sum(x_norm, axis=1)
+        x_norm = nd.sqrt(x_norm)
+        #  cos_theta = x'w/|x|. note: |w| = 1
+        cos_theta = nd.dot(x, w, transpose_b=True)
+        cos_theta = cos_theta / x_norm.reshape((-1, 1))
+        #  cos_theta_quadratic & cos_theta_quartic
+        cos_theta_quadratic = cos_theta ** 2
+        cos_theta_quartic = cos_theta ** 4
+        with mx.autograd.pause():
+            #  sign_0 = sign(cos_theta)
+            sign_0 = nd.sign(cos_theta)
+            #  sign_3 = sign_0 * sign(2 * cos_theta_quadratic_ - 1)
+            sign_3 = sign_0 * nd.sign(2 * cos_theta_quadratic - 1)
+            #  sign_4 = 2 * sign_0 + sign_3 - 3
+            sign_4 = 2 * sign_0 + sign_3 - 3
+        #  phi_theta = (sign_3 * (8 * cos_theta_quartic - 8 * cos_theta_quadratic + 1) + sign_4)
+        phi_theta = sign_3 * (8 * cos_theta_quartic - 8 * cos_theta_quadratic + 1) + sign_4
+        x_norm_phi_theta = x_norm.reshape((-1, 1)) * phi_theta
+        #  i=j index
+        with mx.autograd.pause():
+            index = nd.one_hot(label, x_norm_phi_theta.shape[1])
+        #  output
+        with mx.autograd.pause():
+            lamb = self.__get_lambda() # 10
+        output = nd.dot(x, w, transpose_b=True)
+        output2 = output * (1.0 - index) + x_norm_phi_theta * index
+        output3 = (output2 + lamb * nd.dot(x, w, transpose_b=True)) / (1 + lamb)
+        return output3
+
+    def implement_1(self, x, label):
+        '''
+        following paper to implement
+        '''
+        #  weight normalize
+        with x.context:
+            w = self.weight.data()
+        w_norm = w / nd.sqrt(nd.sum(nd.power(w, 2), axis=1)).reshape((-1, 1))
         #  cos_theta = x'w/|x|. note: |w| = 1
         x_norm = nd.power(x, 2)
         x_norm = nd.sum(x_norm, axis=1)
         x_norm = nd.sqrt(x_norm)
-        output = nd.dot(x, w)
-        cos_theta = output / x_norm.reshape((-1, 1))
+        cos_theta = nd.dot(x, w_norm, transpose_b=True)
+        cos_theta = cos_theta / x_norm.reshape((-1, 1))
         cos_theta = nd.clip(cos_theta, -1, 1)
         #  cos_m_theta = cos(m * theta)
         cos_m_theta = self.margin_cos[self.margin](cos_theta)
@@ -56,15 +100,17 @@ class MarginInnerProduct(nn.Block):
         #  i=j is phi_theta and i!=j is cos_theta
         phi_theta = ((-1)**k) * cos_m_theta - 2 * k
         x_norm_phi_theta = x_norm.reshape((-1, 1)) * phi_theta
+        x_norm_cos_theta = x_norm.reshape((-1, 1)) * cos_theta
         #  i=j index
         with mx.autograd.pause():
-            index = nd.one_hot(label, output.shape[1])
+            index = nd.one_hot(label, x_norm_phi_theta.shape[1])
         #  output
         with mx.autograd.pause():
             lamb = self.__get_lambda()
-        output2 = output * (1.0 - index) + x_norm_phi_theta * index
-        output3 = (output2 + lamb * output) / (1 + lamb)
-        return output3
+        output = x_norm_cos_theta * 1.0
+        output = output - x_norm_cos_theta * index / (1 + lamb)
+        output = output + x_norm_phi_theta * index / (1 + lamb)
+        return output
 
     def __get_lambda(self):
         self.lamb_iter += 1
@@ -76,21 +122,23 @@ class MarginInnerProduct(nn.Block):
 
 
 if __name__ == "__main__":
-    params = {"feature_dim": 4, "class_num": 6, 
-              "lamb_iter":0,"lamb_base":1000,"lamb_gamma":0.0001,"lamb_power":1,"lamb_min":10}
+    params = {"feature_dim": 512, "label_num": 10000, 
+              "lamb_iter":0,"lamb_base":1000,"lamb_gamma":0.12,"lamb_power":1,"lamb_min":5}
     # ctx = [mx.gpu(4), mx.gpu(5)]
-    ctx = [mx.gpu(1)]
+    # ctx = [mx.gpu(1)]
+    ctx = [mx.cpu()]
     test = MarginInnerProduct(params)
-    test.params
+    print test.params
     test.initialize(ctx=ctx)
-    x = nd.random.uniform(shape=(2,4))
-    label = nd.zeros([2])
+    # x = nd.random.uniform(shape=(2,4))
+    x = nd.ones([6, 512]) * 0.3
+    label = nd.ones([6])
     x_list = mx.gluon.utils.split_and_load(x, ctx)
     label_list = mx.gluon.utils.split_and_load(label, ctx)
     with mx.autograd.record():
         for x, label in zip(x_list, label_list):
             y = test(x, label)
-    print "y", y
+    # print "y", y
     # print y
-    y.backward()
+    # y.backward()
 

@@ -30,10 +30,12 @@ class SphereFaceNet(gluon.Block):
     def __init__(self, model_params, **kwargs):
         super(SphereFaceNet, self).__init__(**kwargs)
         with self.name_scope():
+            label_num  = model_params["label_num"]
             self.models = self._main_net(model_params["layer_type"], model_params["feature_dim"],
-                                         model_params["label_num"])
+                                         label_num)
             #  A-softmax = margin_inner_product + softmax_loss
-            self.margin_inner_product = MarginInnerProduct(model_params)
+            self.margin_inner_product = MarginInnerProduct(model_params,
+                                                           prefix="MarginFC%d"%(label_num))
             self.softmax_loss = loss.SoftmaxCrossEntropyLoss()
 
     def forward(self, x, label):
