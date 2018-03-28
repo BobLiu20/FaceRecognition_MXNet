@@ -1,9 +1,9 @@
 # Face Recognition
 
 ### Models
-1. SphereFace with A-Softmax
- * Review paper: [link](https://arxiv.org/abs/1704.08063)
- * In this code, Two ways to implement a-softmax.
+1. **SphereFace with A-Softmax**
+* Review paper: [link](https://arxiv.org/abs/1704.08063)
+* In this code, Two ways to implement a-softmax.
   * first: following the code of caffe what's wrote by paper author.
   * second: following paper in my understanding.
   * you can check it in ```models/margin_inner_product_layer.py```
@@ -23,5 +23,5 @@ python training.py --input_paths=/your/data/path/10000_caffe_format.lst --workin
 * The PyTorch implementation to see [here](https://github.com/BobLiu20/FaceRecognition_PyTorch)
 
 ### References
-[sphereface](https://github.com/wy1iu/sphereface)   
+* [sphereface](https://github.com/wy1iu/sphereface)   
 
