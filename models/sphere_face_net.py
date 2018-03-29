@@ -7,20 +7,39 @@ from mxnet import gluon
 
 from margin_inner_product_layer import MarginInnerProduct
 
+class PReLU(gluon.HybridBlock):
+    def __init__(self, alpha=0.25, **kwargs):
+        super(PReLU, self).__init__(**kwargs)
+        with self.name_scope():
+            self.alpha = self.params.get('alpha', shape=(1,), init=mx.init.Constant(alpha))
+
+    def hybrid_forward(self, F, x, alpha):
+        pos = F.relu(x)
+        neg = F.broadcast_mul(F.negative(alpha), F.relu(F.negative(x)))
+        return pos + neg
+
+    def __repr__(self):
+        s = '{name}'
+        return s.format(name=self.__class__.__name__)
+
 class CNNResidualBlock(nn.Block):
     def __init__(self, num_output_cnn, num_output_res, num_residual, **kwargs):
         super(CNNResidualBlock, self).__init__(**kwargs)
         self.num_residual = num_residual
-        self.cnn = nn.Conv2D(num_output_cnn, kernel_size=3, strides=2, padding=1, activation="relu")
+        self.cnn = nn.Conv2D(num_output_cnn, kernel_size=3, strides=2, padding=1)
+        self.prelu = PReLU()
         for i in range(self.num_residual):
             setattr(self, 'residual%d' % i, nn.Sequential())
             getattr(self, 'residual%d' % i).add(
-                nn.Conv2D(num_output_res, kernel_size=3, strides=1, padding=1, activation="relu"),
-                nn.Conv2D(num_output_res, kernel_size=3, strides=1, padding=1, activation="relu")
+                nn.Conv2D(num_output_res, kernel_size=3, strides=1, padding=1),
+                PReLU(),
+                nn.Conv2D(num_output_res, kernel_size=3, strides=1, padding=1),
+                PReLU()
             )
 
     def forward(self, x):
         x = self.cnn(x)
+        x = self.prelu(x)
         for i in range(self.num_residual):
             _x = getattr(self, 'residual%d' % i)(x)
             x = x + _x
